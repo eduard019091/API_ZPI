@@ -238,10 +238,17 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+    const isProduction = process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.NODE_ENV === 'production';
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        bot_status: botInstance ? (botInstance.isLoggedIn ? 'connected' : 'initializing') : 'not_started'
+        bot_status: botInstance ? (botInstance.isLoggedIn ? 'connected' : 'initializing') : 'not_started',
+        environment: isProduction ? 'production' : 'development',
+        platform: process.platform,
+        node_version: process.version,
+        memory_usage: process.memoryUsage(),
+        render_detected: !!process.env.RENDER,
+        chrome_bin: process.env.CHROME_BIN || 'not_set'
     });
 });
 

@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.nyc_output
+coverage
+.nyc_output
+*.db
+chrome-profile
+whatsapp_qr_debug.png
+*.log

@@ -4,51 +4,101 @@ const { Options, ServiceBuilder } = require('selenium-webdriver/chrome');
 const path = require('path');
 const fs = require('fs');
 
-class WhatsAppBot {
-    constructor(headless = false, waitTimeout = 30000) {
+class WhatsApp    constructor(headless = false, waitTimeout = 30000) {
         this.driver = null;
         this.waitTimeout = waitTimeout;
-        this.headless = headless;
+        // Detectar se está rodando no OnRender ou ambiente de produção
+        this.isProduction = process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.NODE_ENV === 'production';
+        this.headless = headless || this.isProduction;
         this.isLoggedIn = false;
+    }alse;
     }
 
     async start() {
         try {
             console.log('🔧 Iniciando WhatsApp Bot...');
-            
-            // Configurações do Chrome - otimizadas para WhatsApp Web
+             // Configurações do Chrome - otimizadas para WhatsApp Web
             const options = new Options();
             options.addArguments('--no-sandbox');
             options.addArguments('--disable-dev-shm-usage');
             options.addArguments('--disable-blink-features=AutomationControlled');
             options.addArguments('--disable-web-security');
             options.addArguments('--disable-features=VizDisplayCompositor');
-			options.addArguments('--disable-gpu');
+            options.addArguments('--disable-gpu');
+            options.addArguments('--disable-extensions');
+            options.addArguments('--disable-plugins');
+            options.addArguments('--disable-images');
+            options.addArguments('--disable-default-apps');
+            options.addArguments('--disable-background-timer-throttling');
+            options.addArguments('--disable-backgrounding-occluded-windows');
+            options.addArguments('--disable-renderer-backgrounding');
+            options.addArguments('--disable-field-trial-config');
+            options.addArguments('--disable-ipc-flooding-protection');
             
             // Configurações experimentais para Selenium 4.x
             options.excludeSwitches('enable-automation');
             options.addArguments('--disable-automation');
             
-            // NUNCA usar headless para WhatsApp Web (QR Code não aparece)
-            // if (this.headless) {
-            //     options.addArguments('--headless');
-            // }
+            // Configurações específicas para OnRender e ambientes de produção
+            if (this.isProduction) {
+                console.log('🔧 Configurando Chrome para ambiente de produção (OnRender)');
+                options.addArguments('--headless=new'); // Usar novo modo headless
+                options.addArguments('--no-first-run');
+                options.addArguments('--disable-background-networking');
+                options.addArguments('--disable-sync');
+                options.addArguments('--metrics-recording-only');
+                options.addArguments('--no-report-upload');
+                options.addArguments('--single-process');
+                options.addArguments('--remote-debugging-port=9222');
+                options.addArguments('--disable-logging');
+                options.addArguments('--silent');
+                options.addArguments('--disable-crash-reporter');
+                options.addArguments('--disable-in-process-stack-traces');
+                options.addArguments('--disable-logging');
+                options.addArguments('--disable-dev-shm-usage');
+                options.addArguments('--log-level=3');
+                options.addArguments('--output=/dev/null');
+                
+                // Configurações de memória para OnRender (512MB limit)
+                options.addArguments('--memory-pressure-off');
+                options.addArguments('--max_old_space_size=460');
+                options.addArguments('--aggressive-cache-discard');
+                
+                // Configurar caminho do Chrome se especificado
+                if (process.env.CHROME_BIN) {
+                    options.setChromeBinaryPath(process.env.CHROME_BIN);
+                    console.log('🔧 Usando Chrome em:', process.env.CHROME_BIN);
+                }
+            } else {
+                console.log('🔧 Configurando Chrome para ambiente de desenvolvimento');
+                // Em desenvolvimento local, não usar headless para ver o QR Code
+            }headless');
+            // }            // Configurações de janela
+            options.addArguments('--window-size=1280,720');
+            if (!this.isProduction) {
+                options.addArguments('--start-maximized');
+            }
             
-			// Configurações para garantir que o QR Code apareça
-			options.addArguments('--window-size=1280,720');
-			options.addArguments('--start-maximized');
-			
-			// Usar perfil de usuário dedicado para persistir sessão e facilitar o login
-			const userDataDir = path.join(process.cwd(), 'chrome-profile');
-			try {
-				if (!fs.existsSync(userDataDir)) {
-					fs.mkdirSync(userDataDir, { recursive: true });
-				}
-				options.addArguments(`user-data-dir=${userDataDir}`);
-				options.addArguments('--profile-directory=Default');
-				console.log('👤 Usando perfil do Chrome em', userDataDir);
-			} catch (e) {
-				console.warn('⚠️ Não foi possível configurar user-data-dir:', e && e.message ? e.message : e);
+            // Configurações de perfil de usuário
+            if (!this.isProduction) {
+                // Usar perfil de usuário dedicado apenas em desenvolvimento
+                const userDataDir = path.join(process.cwd(), 'chrome-profile');
+                try {
+                    if (!fs.existsSync(userDataDir)) {
+                        fs.mkdirSync(userDataDir, { recursive: true });
+                    }
+                    options.addArguments(`--user-data-dir=${userDataDir}`);
+                    options.addArguments('--profile-directory=Default');
+                    console.log('👤 Usando perfil do Chrome em', userDataDir);
+                } catch (e) {
+                    console.warn('⚠️ Não foi possível configurar user-data-dir:', e && e.message ? e.message : e);
+                }
+            } else {
+                // Em produção, usar diretório temporário
+                const tmpDir = '/tmp/chrome-profile-' + Date.now();
+                options.addArguments(`--user-data-dir=${tmpDir}`);
+                console.log('👤 Usando perfil temporário do Chrome em', tmpDir);
+            }essage ? e.message : e);
 			}
             
             console.log('📋 Configurações do Chrome aplicadas');
@@ -108,19 +158,40 @@ class WhatsAppBot {
             
             // Verificar se já está logado
 			console.log('🔍 Verificando status de login...');
-			await this.checkLoginStatus();
-            
-            return true;
-            
-        } catch (error) {
+			await thi        } catch (error) {
             console.error('Erro ao iniciar bot:', error);
             console.error('Detalhes do erro:', error.message);
+            
+            if (this.isProduction) {
+                console.error('🚨 ERRO NO ONRENDER - Possíveis causas:');
+                console.error('1. Chrome não foi instalado corretamente');
+                console.error('2. Dependências do sistema estão faltando');
+                console.error('3. Memória insuficiente (OnRender tem limite de 512MB)');
+                console.error('4. Configurações de build incorretas');
+                console.error('');
+                console.error('💡 SOLUÇÕES:');
+                console.error('1. Verifique se o render.yaml está configurado corretamente');
+                console.error('2. Verifique se as variáveis de ambiente estão definidas');
+                console.error('3. Verifique os logs de build do OnRender');
+                console.error('4. Considere usar um plano com mais memória');
+            } else {
+                console.error('💡 SOLUÇÕES PARA DESENVOLVIMENTO LOCAL:');
+                console.error('1. Instale o Google Chrome');
+                console.error('2. Execute: npm run diagnose');
+                console.error('3. Feche outras instâncias do Chrome');
+                console.error('4. Execute como administrador se necessário');
+            }
+            
             if (this.driver) {
                 try {
                     await this.driver.quit();
                 } catch (quitError) {
                     console.error('Erro ao fechar driver:', quitError);
                 }
+                this.driver = null;
+            }
+            return false;
+        }
                 this.driver = null;
             }
             return false;
