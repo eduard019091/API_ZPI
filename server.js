@@ -154,7 +154,8 @@ function getBotInstance() {
         try {
                 console.log('Criando nova instância do bot...');
                 // Aumentar tempo de espera para dar tempo do QR renderizar
-                botInstance = new WhatsAppBot(false, 45000);
+                // headless = null permite auto-detecção baseada no ambiente
+                botInstance = new WhatsAppBot(null, 45000);
 
                 // Start with a safety timeout so we don't hang forever if chromedriver blocks
                 const startTimeoutMs = 60000; // 60 seconds

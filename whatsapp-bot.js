@@ -2,43 +2,59 @@ const { Builder, By, Key, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 const { Options, ServiceBuilder } = require('selenium-webdriver/chrome');
 const path = require('path');
-const fs = require('fs');
-
-class WhatsAppBot {
-    constructor(headless = false, waitTimeout = 30000) {
+const fs = require('fs'class WhatsAppBot {
+    constructor(headless = null, waitTimeout = 30000) {
         this.driver = null;
         this.waitTimeout = waitTimeout;
-        this.headless = headless;
+        // Auto-detectar se deve rodar em headless baseado no ambiente
+        // Em produção (sem DISPLAY), usar headless automaticamente
+        if (headless === null) {
+            this.headless = !process.env.DISPLAY || process.env.NODE_ENV === 'production';
+        } else {
+            this.headless = headless;
+        }
         this.isLoggedIn = false;
-    }
-
-    async start() {
+        console.log(`🔧 Modo headless: ${this.headless ? 'ATIVADO' : 'DESATIVADO'}`);
+    }alse;
+      async start() {
         try {
             console.log('🔧 Iniciando WhatsApp Bot...');
-            
-            // Configurações do Chrome - otimizadas para WhatsApp Web
+            console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`🖥️  Display: ${process.env.DISPLAY || 'nenhum (headless obrigatório)'}`);Bot...');
+               // Configurações do Chrome - otimizadas para WhatsApp Web
             const options = new Options();
+            
+            // Flags essenciais para ambientes de produção/container
             options.addArguments('--no-sandbox');
             options.addArguments('--disable-dev-shm-usage');
+            options.addArguments('--disable-gpu');
+            options.addArguments('--disable-software-rasterizer');
+            
+            // Flags para servidores sem display gráfico
+            if (this.headless) {
+                console.log('🖥️  Executando em modo headless (sem interface gráfica)');
+                options.addArguments('--headless=new'); // Chrome 109+
+                options.addArguments('--disable-extensions');
+                options.addArguments('--remote-debugging-port=9222');
+            }
+            
+            // Flags adicionais para estabilidade
             options.addArguments('--disable-blink-features=AutomationControlled');
             options.addArguments('--disable-web-security');
             options.addArguments('--disable-features=VizDisplayCompositor');
-			options.addArguments('--disable-gpu');
+            options.addArguments('--disable-setuid-sandbox');
+            options.addArguments('--disable-infobars');
+            options.addArguments('--window-size=1280,720');
             
             // Configurações experimentais para Selenium 4.x
             options.excludeSwitches('enable-automation');
             options.addArguments('--disable-automation');
             
-            // NUNCA usar headless para WhatsApp Web (QR Code não aparece)
-            // if (this.headless) {
-            //     options.addArguments('--headless');
-            // }
-            
-			// Configurações para garantir que o QR Code apareça
-			options.addArguments('--window-size=1280,720');
-			options.addArguments('--start-maximized');
-			
-			// Usar perfil de usuário dedicado para persistir sessão e facilitar o login
+            // Não maximizar em headless
+            if (!this.headless) {
+                options.addArguments('--start-maximized');
+            }Arguments('--start-maximiz			// Usar perfil de usuário dedicado para persistir sessão
+			// IMPORTANTE: Em servidores efêmeros (como OnRender), a sessão não persiste entre restarts
 			const userDataDir = path.join(process.cwd(), 'chrome-profile');
 			try {
 				if (!fs.existsSync(userDataDir)) {
@@ -49,6 +65,8 @@ class WhatsAppBot {
 				console.log('👤 Usando perfil do Chrome em', userDataDir);
 			} catch (e) {
 				console.warn('⚠️ Não foi possível configurar user-data-dir:', e && e.message ? e.message : e);
+				// Em produção, continuar mesmo sem user-data-dir
+			}? e.message : e);
 			}
             
             console.log('📋 Configurações do Chrome aplicadas');
@@ -108,13 +126,24 @@ class WhatsAppBot {
             
             // Verificar se já está logado
 			console.log('🔍 Verificando status de login...');
-			await this.checkLoginStatus();
-            
-            return true;
-            
-        } catch (error) {
-            console.error('Erro ao iniciar bot:', error);
+			await this.check        } catch (error) {
+            console.error('❌ Erro ao iniciar bot:', error);
             console.error('Detalhes do erro:', error.message);
+            
+            // Mensagens de erro mais específicas
+            if (error.message.includes('chrome') || error.message.includes('Chrome')) {
+                console.error('🚫 PROBLEMA: Chrome não encontrado ou não instalado corretamente');
+                console.error('🛠️  SOLUÇÃO para OnRender:');
+                console.error('   1. Adicione um arquivo render.yaml com instalação do Chrome');
+                console.error('   2. Ou use um Dockerfile customizado com Chrome instalado');
+                console.error('   3. Veja: https://render.com/docs/docker');
+            }
+            
+            if (error.message.includes('session')) {
+                console.error('🚫 PROBLEMA: Falha ao criar sessão do Chrome');
+                console.error('🛠️  SOLUÇÃO: Verifique se as flags do Chrome estão corretas');
+            }
+            
             if (this.driver) {
                 try {
                     await this.driver.quit();
@@ -122,6 +151,9 @@ class WhatsAppBot {
                     console.error('Erro ao fechar driver:', quitError);
                 }
                 this.driver = null;
+            }
+            return false;
+        }          this.driver = null;
             }
             return false;
         }
