@@ -2,7 +2,9 @@ const { Builder, By, Key, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 const { Options, ServiceBuilder } = require('selenium-webdriver/chrome');
 const path = require('path');
-const fs = require('fs'class WhatsAppBot {
+const fs = require('fs');
+
+class WhatsAppBot {
     constructor(headless = null, waitTimeout = 30000) {
         this.driver = null;
         this.waitTimeout = waitTimeout;
@@ -15,13 +17,15 @@ const fs = require('fs'class WhatsAppBot {
         }
         this.isLoggedIn = false;
         console.log(`🔧 Modo headless: ${this.headless ? 'ATIVADO' : 'DESATIVADO'}`);
-    }alse;
-      async start() {
+    }
+
+    async start() {
         try {
             console.log('🔧 Iniciando WhatsApp Bot...');
             console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`🖥️  Display: ${process.env.DISPLAY || 'nenhum (headless obrigatório)'}`);Bot...');
-               // Configurações do Chrome - otimizadas para WhatsApp Web
+            console.log(`🖥️  Display: ${process.env.DISPLAY || 'nenhum (headless obrigatório)'}`);
+            
+            // Configurações do Chrome - otimizadas para WhatsApp Web
             const options = new Options();
             
             // Flags essenciais para ambientes de produção/container
@@ -53,7 +57,9 @@ const fs = require('fs'class WhatsAppBot {
             // Não maximizar em headless
             if (!this.headless) {
                 options.addArguments('--start-maximized');
-            }Arguments('--start-maximiz			// Usar perfil de usuário dedicado para persistir sessão
+            }
+            
+            // Usar perfil de usuário dedicado para persistir sessão
 			// IMPORTANTE: Em servidores efêmeros (como OnRender), a sessão não persiste entre restarts
 			const userDataDir = path.join(process.cwd(), 'chrome-profile');
 			try {
@@ -66,7 +72,6 @@ const fs = require('fs'class WhatsAppBot {
 			} catch (e) {
 				console.warn('⚠️ Não foi possível configurar user-data-dir:', e && e.message ? e.message : e);
 				// Em produção, continuar mesmo sem user-data-dir
-			}? e.message : e);
 			}
             
             console.log('📋 Configurações do Chrome aplicadas');
@@ -111,12 +116,12 @@ const fs = require('fs'class WhatsAppBot {
                 console.warn('⚠️ Diagnostics after opening WhatsApp failed:', e && e.message ? e.message : e);
             }
 
-                // Aguardar carregamento inicial - usar waitTimeout para páginas lentas
-				const initialWait = Math.min(60, Math.max(10, Math.ceil(this.waitTimeout / 1000)));
-				console.log(`⏳ Aguardando carregamento da página (${initialWait}s)...`);
-				// Esperar DOM pronto ou até timeout
-				const end = Date.now() + initialWait * 1000;
-				while (Date.now() < end) {
+            // Aguardar carregamento inicial - usar waitTimeout para páginas lentas
+			const initialWait = Math.min(60, Math.max(10, Math.ceil(this.waitTimeout / 1000)));
+			console.log(`⏳ Aguardando carregamento da página (${initialWait}s)...`);
+			// Esperar DOM pronto ou até timeout
+			const end = Date.now() + initialWait * 1000;
+			while (Date.now() < end) {
 					try {
 						const ready = await this.driver.executeScript('return document.readyState');
 						if (ready === 'complete') break;
@@ -126,7 +131,10 @@ const fs = require('fs'class WhatsAppBot {
             
             // Verificar se já está logado
 			console.log('🔍 Verificando status de login...');
-			await this.check        } catch (error) {
+			await this.checkLoginStatus();
+            
+            return true;
+        } catch (error) {
             console.error('❌ Erro ao iniciar bot:', error);
             console.error('Detalhes do erro:', error.message);
             
@@ -148,14 +156,12 @@ const fs = require('fs'class WhatsAppBot {
                 try {
                     await this.driver.quit();
                 } catch (quitError) {
-                    console.error('Erro ao fechar driver:', quitError);
-                }
+                    console.error(                }
                 this.driver = null;
             }
             return false;
-        }          this.driver = null;
-            }
-            return false;
+        }
+    }         return false;
         }
     }
 
