@@ -8,6 +8,8 @@ class WhatsAppBot {
     constructor(headless = null, waitTimeout = 30000) {
         this.driver = null;
         this.waitTimeout = waitTimeout;
+        // delay em ms antes de tirar screenshot do QR para garantir que o QR seja gerado
+        this.qrDelayMs = 5000; // 5 segundos padrão, pode ser ajustado externamente
         // Auto-detectar se deve rodar em headless baseado no ambiente
         // Em produção (sem DISPLAY), usar headless automaticamente
         if (headless === null) {
@@ -21,6 +23,21 @@ class WhatsAppBot {
 
     async start() {
         try {
+            // Remover screenshots/diagnósticos antigos antes de iniciar
+            const diagFiles = [
+                'whatsapp_qr_debug.png',
+                'whatsapp_qr_debug_noqrcode.png',
+                'whatsapp_page.html',
+                'whatsapp_page_no_qr.html'
+            ];
+            for (const f of diagFiles) {
+                try {
+                    fs.unlinkSync(path.join(process.cwd(), f));
+                    console.log(`🗑️ Arquivo antigo removido: ${f}`);
+                } catch (e) {
+                    // Ignorar se não existir
+                }
+            }
             console.log('🔧 Iniciando WhatsApp Bot...');
             console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
             console.log(`🖥️  Display: ${process.env.DISPLAY || 'nenhum (headless obrigatório)'}`);
@@ -105,12 +122,18 @@ class WhatsAppBot {
                 const title = await this.driver.getTitle();
                 console.log(`🔍 Página aberta: url=${currentUrl} title=${title}`);
                 try {
+                    // Aguarde um pouco para o QR aparecer no DOM/ser desenhado
+                    await this.driver.sleep(this.qrDelayMs);
                     const png = await this.driver.takeScreenshot();
                     const ssPath = path.join(process.cwd(), 'whatsapp_qr_debug.png');
                     fs.writeFileSync(ssPath, png, 'base64');
-                    console.log('📸 Screenshot salvo em', ssPath);
+                    if (fs.existsSync(ssPath)) {
+                        console.log('📸 Screenshot salva com sucesso em', ssPath);
+                    } else {
+                        console.error('❌ Falha ao salvar screenshot: arquivo não encontrado após escrita');
+                    }
                 } catch (e) {
-                    console.warn('📸 Falha ao salvar screenshot:', e && e.message ? e.message : e);
+                    console.error('📸 Falha ao salvar screenshot inicial:', e && e.message ? e.message : e);
                 }
             } catch (e) {
                 console.warn('⚠️ Diagnostics after opening WhatsApp failed:', e && e.message ? e.message : e);
@@ -212,6 +235,16 @@ class WhatsAppBot {
                         qrCode = await this.driver.findElement(By.css(selector));
                         if (qrCode) {
                             console.log(`📱 QR Code detectado (seletor: ${selector})`);
+                            // Tirar screenshot extra quando o QR é detectado (garantir captura do QR atual)
+                            try {
+                                await this.driver.sleep(Math.max(1000, this.qrDelayMs=2000));
+                                const png = await this.driver.takeScreenshot();
+                                const ssPath = path.join(process.cwd(), 'whatsapp_qr_debug.png');
+                                fs.writeFileSync(ssPath, png, 'base64');
+                                console.log('📸 Screenshot (QR) salvo em', ssPath);
+                            } catch (sErr) {
+                                console.warn('📸 Falha ao salvar screenshot do QR:', sErr && sErr.message ? sErr.message : sErr);
+                            }
                             break;
                         }
                     } catch (e) {
