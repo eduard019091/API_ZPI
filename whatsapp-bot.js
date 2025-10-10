@@ -156,12 +156,11 @@ class WhatsAppBot {
                 try {
                     await this.driver.quit();
                 } catch (quitError) {
-                    console.error(                }
+                    console.error('Erro ao fechar driver:', quitError);
+                }
                 this.driver = null;
             }
             return false;
-        }
-    }         return false;
         }
     }
 
