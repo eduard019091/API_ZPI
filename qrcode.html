@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp QR Code - Thunder Bot</title>
+    <title>Thunder - QR Code WhatsApp</title>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="thunder.png">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="nav-component.js" defer></script>
     <style>
         .qr-container {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 80vh;
+            min-height: 70vh;
             padding: 20px;
         }
         
@@ -25,6 +26,7 @@
             max-width: 600px;
             width: 100%;
             text-align: center;
+            border: 1px solid var(--border-color);
         }
         
         .qr-image {
@@ -42,7 +44,7 @@
             justify-content: center;
             gap: 10px;
             margin-bottom: 20px;
-            padding: 10px;
+            padding: 12px 20px;
             border-radius: 8px;
             font-weight: 500;
         }
@@ -74,6 +76,9 @@
         .qr-instructions h3 {
             margin-top: 0;
             color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
         .qr-instructions ol {
@@ -104,27 +109,49 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .qr-title {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .qr-title .material-icons {
+            font-size: 48px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .info-footer {
+            margin-top: 20px;
+            color: #666;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .info-footer .material-icons {
+            font-size: 16px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <nav class="sidebar">
-            <div class="sidebar-header">
-                <img src="thunder.png" alt="Thunder Logo" class="logo">
-                <span class="logo-text">Thunder Bot</span>
-            </div>
-            <ul class="nav-menu">
-                <li><a href="dashboard.html"><span class="material-icons">dashboard</span> Dashboard</a></li>
-                <li><a href="grupos.html"><span class="material-icons">group</span> Grupos</a></li>
-                <li><a href="instancias.html"><span class="material-icons">devices</span> Instâncias</a></li>
-                <li class="active"><a href="qrcode.html"><span class="material-icons">qr_code_2</span> QR Code</a></li>
-                <li><a href="configuracoes.html"><span class="material-icons">settings</span> Configurações</a></li>
-            </ul>
-        </nav>
+        <nav-bar></nav-bar>
 
         <main class="main-content">
             <header class="header">
-                <h2>WhatsApp QR Code</h2>
                 <div class="user-status">
                     <span id="connection-status">Sistema Online</span>
                     <span class="status-indicator online" id="status-indicator"></span>
@@ -132,12 +159,27 @@
             </header>
 
             <section class="content-body">
+                <div class="content-header">
+                    <div>
+                        <h1>QR Code WhatsApp</h1>
+                        <p>Conecte seu WhatsApp ao sistema</p>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary" onclick="checkStatus()">
+                            <span class="material-icons">check_circle</span> Verificar Status
+                        </button>
+                        <button class="btn btn-primary" onclick="refreshQR()">
+                            <span class="material-icons">refresh</span> Atualizar
+                        </button>
+                    </div>
+                </div>
+
                 <div class="qr-container">
                     <div class="qr-card">
-                        <h1 style="color: var(--primary-color); margin-bottom: 10px;">
-                            <span class="material-icons" style="font-size: 48px; vertical-align: middle;">qr_code_scanner</span>
+                        <h1 class="qr-title">
+                            <span class="material-icons">qr_code_scanner</span>
+                            <span>Conectar WhatsApp</span>
                         </h1>
-                        <h2 style="margin-top: 0;">Conectar WhatsApp</h2>
                         
                         <div class="qr-status loading" id="qr-status">
                             <span class="material-icons">hourglass_empty</span>
@@ -149,7 +191,10 @@
                         </div>
                         
                         <div class="qr-instructions">
-                            <h3><span class="material-icons" style="vertical-align: middle;">info</span> Como Conectar</h3>
+                            <h3>
+                                <span class="material-icons">info</span>
+                                <span>Como Conectar</span>
+                            </h3>
                             <ol>
                                 <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
                                 <li>Toque em <strong>Menu (⋮)</strong> ou <strong>Configurações</strong></li>
@@ -159,18 +204,9 @@
                             </ol>
                         </div>
                         
-                        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                            <button class="btn btn-primary refresh-btn" onclick="refreshQR()">
-                                <span class="material-icons">refresh</span> Atualizar QR Code
-                            </button>
-                            <button class="btn btn-secondary refresh-btn" onclick="checkStatus()">
-                                <span class="material-icons">check_circle</span> Verificar Conexão
-                            </button>
-                        </div>
-                        
-                        <p style="margin-top: 20px; color: #666; font-size: 14px;">
-                            <span class="material-icons" style="font-size: 16px; vertical-align: middle;">info</span>
-                            O QR Code expira após alguns minutos. Clique em "Atualizar" se necessário.
+                        <p class="info-footer">
+                            <span class="material-icons">info</span>
+                            <span>O QR Code expira após alguns minutos. Clique em "Atualizar" se necessário.</span>
                         </p>
                     </div>
                 </div>
@@ -178,6 +214,7 @@
         </main>
     </div>
 
+    <script src="script.js"></script>
     <script>
         let refreshInterval = null;
         let retryCount = 0;
@@ -258,7 +295,7 @@
                         <span class="material-icons" style="font-size: 64px; color: #dc3545;">error_outline</span>
                         <p style="margin-top: 20px;">${error.message}</p>
                         <p style="font-size: 14px; margin-top: 10px;">
-                            Clique em "Atualizar QR Code" para tentar novamente.
+                            Clique em "Atualizar" para tentar novamente.
                         </p>
                     </div>
                 `;
@@ -302,13 +339,12 @@
         
         function refreshQR() {
             stopAutoCheck();
-            retryCount = 0; // Reset retry count
+            retryCount = 0;
             loadQRCode();
         }
         
         function startAutoCheck() {
             stopAutoCheck();
-            // Verificar conexão a cada 5 segundos
             refreshInterval = setInterval(checkStatus, 5000);
         }
         
@@ -325,10 +361,26 @@
 
             const notification = document.createElement('div');
             notification.className = `notification notification-${type}`;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : '#fff3cd'};
+                color: ${type === 'success' ? '#155724' : type === 'error' ? '#721c24' : '#856404'};
+                padding: 15px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                z-index: 10000;
+                animation: slideIn 0.3s ease-out;
+            `;
+            
             notification.innerHTML = `
                 <span class="material-icons">${type === 'success' ? 'check_circle' : type === 'error' ? 'error' : 'info'}</span>
                 <span>${message}</span>
-                <button class="notification-close">
+                <button onclick="this.parentElement.remove()" style="background: none; border: none; cursor: pointer; margin-left: 10px;">
                     <span class="material-icons">close</span>
                 </button>
             `;
@@ -340,10 +392,6 @@
                     notification.remove();
                 }
             }, 5000);
-
-            notification.querySelector('.notification-close').addEventListener('click', () => {
-                notification.remove();
-            });
         }
         
         // Carregar QR ao iniciar página
