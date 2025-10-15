@@ -1,185 +1,170 @@
 const { Builder, By, Key, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
-const { Options, ServiceBuilder } = require('selenium-webdriver/chrome');
+const { Options } = require('selenium-webdriver/chrome');
 const path = require('path');
 const fs = require('fs');
 
 class WhatsAppBot {
-    constructor(headless = null, waitTimeout = 30000) {
+    // Função estática para verificar processos
+    static async checkProcesses() {
+        const { execSync } = require('child_process');
+        console.log('🔍 Verificando processos...');
+        
+        try {
+            // No Windows, usar tasklist
+            const processes = execSync('tasklist /FI "IMAGENAME eq chrome.exe" /FI "IMAGENAME eq chromedriver.exe"', { encoding: 'utf8' });
+            console.log('Processos encontrados:\n', processes);
+            
+            return processes;
+        } catch (e) {
+            console.warn('⚠️ Erro ao verificar processos:', e.message);
+            return null;
+        }
+    }
+
+    constructor(headless = null, waitTimeout = 60000) {
         this.driver = null;
         this.waitTimeout = waitTimeout;
-        // delay em ms antes de tirar screenshot do QR para garantir que o QR seja gerado
-        this.qrDelayMs = 5000; // 5 segundos padrão, pode ser ajustado externamente
-        // Auto-detectar se deve rodar em headless baseado no ambiente
-        // Em produção (sem DISPLAY), usar headless automaticamente
+        this.qrDelayMs = 8000; // Aumentado para 8 segundos
+        
+        // Auto-detectar headless
         if (headless === null) {
             this.headless = !process.env.DISPLAY || process.env.NODE_ENV === 'production';
         } else {
             this.headless = headless;
         }
+        
         this.isLoggedIn = false;
+        this.qrCodeData = null; // Armazenar dados do QR
         console.log(`🔧 Modo headless: ${this.headless ? 'ATIVADO' : 'DESATIVADO'}`);
     }
 
     async start() {
         try {
-            // Remover screenshots/diagnósticos antigos antes de iniciar
-            const diagFiles = [
-                'whatsapp_qr_debug.png',
-                'whatsapp_qr_debug_noqrcode.png',
-                'whatsapp_page.html',
-                'whatsapp_page_no_qr.html'
-            ];
-            for (const f of diagFiles) {
-                try {
-                    fs.unlinkSync(path.join(process.cwd(), f));
-                    console.log(`🗑️ Arquivo antigo removido: ${f}`);
-                } catch (e) {
-                    // Ignorar se não existir
-                }
-            }
             console.log('🔧 Iniciando WhatsApp Bot...');
-            console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`🖥️  Display: ${process.env.DISPLAY || 'nenhum (headless obrigatório)'}`);
             
-            // Configurações do Chrome - otimizadas para WhatsApp Web
+            // Verificar processos antes de iniciar
+            await WhatsAppBot.checkProcesses();
+            console.log(`📦 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+            
+            // Limpar screenshots antigos
+            this.cleanupOldScreenshots();
+            
+            // Configurar Chrome
             const options = new Options();
             
-            // Flags essenciais para ambientes de produção/container
+            // Flags essenciais
             options.addArguments('--no-sandbox');
             options.addArguments('--disable-dev-shm-usage');
             options.addArguments('--disable-gpu');
             options.addArguments('--disable-software-rasterizer');
-            
-            // Flags para servidores sem display gráfico
-            if (this.headless) {
-                console.log('🖥️  Executando em modo headless (sem interface gráfica)');
-                options.addArguments('--headless=new'); // Chrome 109+
-                options.addArguments('--disable-extensions');
-                options.addArguments('--remote-debugging-port=9222');
-            }
-            
-            // Flags adicionais para estabilidade
             options.addArguments('--disable-blink-features=AutomationControlled');
             options.addArguments('--disable-web-security');
-            options.addArguments('--disable-features=VizDisplayCompositor');
-            options.addArguments('--disable-setuid-sandbox');
-            options.addArguments('--disable-infobars');
-            options.addArguments('--window-size=1280,720');
+            options.addArguments('--window-size=1920,1080'); // Tamanho maior para garantir QR visível
+            // Minimizar logs/relatórios de crash
+            options.addArguments('--disable-breakpad');
+            options.addArguments('--enable-logging=stderr');
+            options.addArguments('--v=0');
+            // Reduzir subsistemas de rede que podem gerar mensagens Google APIs/GCM
+            options.addArguments('--disable-features=NetworkService');
+            options.addArguments('--disable-background-networking');
+            options.addArguments('--disable-sync');
+            options.addArguments('--disable-component-update');
+            options.addArguments('--disable-client-side-phishing-detection');
             
-            // Configurações experimentais para Selenium 4.x
-            options.excludeSwitches('enable-automation');
-            options.addArguments('--disable-automation');
-            
-            // Não maximizar em headless
-            if (!this.headless) {
+            if (this.headless) {
+                console.log('🖥️  Executando em modo headless');
+                options.addArguments('--headless=new');
+                options.addArguments('--disable-extensions');
+                options.addArguments('--remote-debugging-port=9222');
+            } else {
                 options.addArguments('--start-maximized');
             }
             
-            // Usar perfil de usuário dedicado para persistir sessão
-			// IMPORTANTE: Em servidores efêmeros (como OnRender), a sessão não persiste entre restarts
-			const userDataDir = path.join(process.cwd(), 'chrome-profile');
-			try {
-				if (!fs.existsSync(userDataDir)) {
-					fs.mkdirSync(userDataDir, { recursive: true });
-				}
-				options.addArguments(`user-data-dir=${userDataDir}`);
-				options.addArguments('--profile-directory=Default');
-				console.log('👤 Usando perfil do Chrome em', userDataDir);
-			} catch (e) {
-				console.warn('⚠️ Não foi possível configurar user-data-dir:', e && e.message ? e.message : e);
-				// Em produção, continuar mesmo sem user-data-dir
-			}
-            
-            console.log('📋 Configurações do Chrome aplicadas');
-            
-            // Usar ChromeDriver automático (compatível com a versão do Chrome)
-            console.log('✅ Usando ChromeDriver automático');
+            // User data dir para persistir sessão
+            // Allow overriding via environment variable to avoid issues with paths
+            // that contain spaces or non-ASCII characters (e.g. OneDrive "Área de Trabalho").
+            const os = require('os');
+            const envProfile = process.env.CHROME_USER_DATA_DIR || process.env.WABOT_CHROME_PROFILE;
+            const safeDefault = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'whatsapp-bot-profile');
+            const userDataDir = envProfile ? envProfile : safeDefault;
+
+            try {
+                if (!fs.existsSync(userDataDir)) {
+                    fs.mkdirSync(userDataDir, { recursive: true });
+                }
+                options.addArguments(`user-data-dir=${userDataDir}`);
+                console.log('👤 Usando perfil do Chrome em:', userDataDir);
+                if (!envProfile) {
+                    console.log('ℹ️  (Usando caminho seguro por padrão. To force a custom path set CHROME_USER_DATA_DIR)');
+                }
+            } catch (e) {
+                console.warn('⚠️ Não foi possível configurar user-data-dir:', e.message);
+            }
             
             // Criar driver
             console.log('🚀 Criando driver...');
-            this.driver = await new Builder()
-                .forBrowser('chrome')
-                .setChromeOptions(options)
-                .build();
-            console.log('✅ Driver criado com sucesso!');
+
+            // Suporte opcional para configurar caminho do chromedriver e do binário do Chrome
+            const chromedriverPath = process.env.CHROMEDRIVER_PATH;
+            const chromeBinaryPath = process.env.CHROME_BINARY_PATH || process.env.CHROME_BIN;
+            if (chromeBinaryPath) {
+                try {
+                    options.setChromeBinaryPath && options.setChromeBinaryPath(chromeBinaryPath);
+                    // Some selenium versions use options.setBinaryPath
+                    if (typeof options.setBinaryPath === 'function') {
+                        options.setBinaryPath(chromeBinaryPath);
+                    }
+                    console.log('🔧 Usando binário do Chrome em:', chromeBinaryPath);
+                } catch (e) {
+                    console.warn('⚠️ Não foi possível setar chrome binary path:', e.message);
+                }
+            }
+
+            let builder = new Builder().forBrowser('chrome').setChromeOptions(options);
+
+            if (chromedriverPath) {
+                try {
+                    const serviceBuilder = new chrome.ServiceBuilder(chromedriverPath);
+                    builder = builder.setChromeService(serviceBuilder);
+                    console.log('🔧 Usando chromedriver em:', chromedriverPath);
+                } catch (e) {
+                    console.warn('⚠️ Falha ao configurar chromedriver customizado:', e.message);
+                }
+            }
+
+            this.driver = await builder.build();
             
-            // Executar script para remover webdriver property
-            await this.driver.executeScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
+            console.log('✅ Driver criado!');
             
-			// Abrir WhatsApp Web
+            // Remover detecção de webdriver
+            await this.driver.executeScript(`
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                delete navigator.__webdriver_script_fn;
+            `);
+            
+            // Abrir WhatsApp Web
             console.log('🌐 Abrindo WhatsApp Web...');
             await this.driver.get('https://web.whatsapp.com');
             
-            // Diagnostics: maximize window, log url/title and save screenshot to help debug QR visibility
-            try {
-                try {
-                    await this.driver.manage().window().maximize();
-                } catch (e) {
-                    // ignore if not supported
-                }
-                const currentUrl = await this.driver.getCurrentUrl();
-                const title = await this.driver.getTitle();
-                console.log(`🔍 Página aberta: url=${currentUrl} title=${title}`);
-                try {
-                    // Aguarde um pouco para o QR aparecer no DOM/ser desenhado
-                    await this.driver.sleep(this.qrDelayMs);
-                    const png = await this.driver.takeScreenshot();
-                    const ssPath = path.join(process.cwd(), 'whatsapp_qr_debug.png');
-                    fs.writeFileSync(ssPath, png, 'base64');
-                    if (fs.existsSync(ssPath)) {
-                        console.log('📸 Screenshot salva com sucesso em', ssPath);
-                    } else {
-                        console.error('❌ Falha ao salvar screenshot: arquivo não encontrado após escrita');
-                    }
-                } catch (e) {
-                    console.error('📸 Falha ao salvar screenshot inicial:', e && e.message ? e.message : e);
-                }
-            } catch (e) {
-                console.warn('⚠️ Diagnostics after opening WhatsApp failed:', e && e.message ? e.message : e);
-            }
-
-            // Aguardar carregamento inicial - usar waitTimeout para páginas lentas
-			const initialWait = Math.min(60, Math.max(10, Math.ceil(this.waitTimeout / 1000)));
-			console.log(`⏳ Aguardando carregamento da página (${initialWait}s)...`);
-			// Esperar DOM pronto ou até timeout
-			const end = Date.now() + initialWait * 1000;
-			while (Date.now() < end) {
-					try {
-						const ready = await this.driver.executeScript('return document.readyState');
-						if (ready === 'complete') break;
-					} catch (_) {}
-					await this.driver.sleep(500);
-				}
+            // Aguardar página carregar completamente
+            console.log('⏳ Aguardando página carregar...');
+            await this.waitForPageLoad();
             
-            // Verificar se já está logado
-			console.log('🔍 Verificando status de login...');
-			await this.checkLoginStatus();
+            // Verificar status e capturar QR
+            await this.checkAndCaptureQR();
             
             return true;
+            
         } catch (error) {
-            console.error('❌ Erro ao iniciar bot:', error);
-            console.error('Detalhes do erro:', error.message);
-            
-            // Mensagens de erro mais específicas
-            if (error.message.includes('chrome') || error.message.includes('Chrome')) {
-                console.error('🚫 PROBLEMA: Chrome não encontrado ou não instalado corretamente');
-                console.error('🛠️  SOLUÇÃO para OnRender:');
-                console.error('   1. Adicione um arquivo render.yaml com instalação do Chrome');
-                console.error('   2. Ou use um Dockerfile customizado com Chrome instalado');
-                console.error('   3. Veja: https://render.com/docs/docker');
-            }
-            
-            if (error.message.includes('session')) {
-                console.error('🚫 PROBLEMA: Falha ao criar sessão do Chrome');
-                console.error('🛠️  SOLUÇÃO: Verifique se as flags do Chrome estão corretas');
-            }
+            console.error('❌ Erro ao iniciar bot:', error.message);
+            console.error(error.stack);
             
             if (this.driver) {
                 try {
                     await this.driver.quit();
-                } catch (quitError) {
-                    console.error('Erro ao fechar driver:', quitError);
+                } catch (e) {
+                    console.error('Erro ao fechar driver:', e.message);
                 }
                 this.driver = null;
             }
@@ -187,197 +172,320 @@ class WhatsAppBot {
         }
     }
 
-    async checkLoginStatus() {
+    cleanupOldScreenshots() {
+        const files = [
+            'whatsapp_qr_debug.png',
+            'whatsapp_qr_debug_noqrcode.png',
+            'whatsapp_page.html'
+        ];
+        
+        files.forEach(file => {
+            try {
+                const filePath = path.join(process.cwd(), file);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (e) {
+                // Ignorar
+            }
+        });
+    }
+
+    async waitForPageLoad() {
+        const maxWait = 30;
+        for (let i = 0; i < maxWait; i++) {
+            try {
+                const ready = await this.driver.executeScript('return document.readyState');
+                if (ready === 'complete') {
+                    console.log('✅ Página carregada');
+                    return true;
+                }
+            } catch (e) {
+                // Continuar tentando
+            }
+            await this.driver.sleep(1000);
+        }
+        console.warn('⚠️  Página não carregou completamente');
+        return false;
+    }
+
+    async checkAndCaptureQR() {
         try {
             console.log('🔍 Verificando status de login...');
             
-			// Aguardar carregamento da página
-			await this.driver.sleep(3000);
-			
-			// Tentar forçar exibição do QR: clicar no botão de recarregar QR se existir
-			try {
-				const refreshBtn = await this.driver.findElement(By.css("[data-testid='refresh-large']"));
-				if (refreshBtn) {
-					await refreshBtn.click();
-					console.log('🔄 Botão de recarregar QR clicado');
-					await this.driver.sleep(2000);
-				}
-			} catch (_) {}
+            // Aguardar um pouco para elementos carregarem
+            await this.driver.sleep(3000);
             
-            // Verificar se já está logado procurando por elementos específicos
-            try {
-                // Procurar por elementos que indicam que está logado
-                const chatList = await this.driver.findElement(By.css("[data-testid='chat-list']"));
-                if (chatList) {
-                    this.isLoggedIn = true;
-                    console.log('✅ WhatsApp Web já está logado!');
-                    return true;
-                }
-            } catch (error) {
-                console.log('📋 Lista de chats não encontrada, verificando QR Code...');
+            // Verificar se já está logado
+            if (await this.isAlreadyLoggedIn()) {
+                this.isLoggedIn = true;
+                console.log('✅ WhatsApp Web já está logado!');
+                return true;
             }
             
-            // Se não encontrou chat-list, verificar se há QR code
-            try {
-                // Procurar QR Code por diferentes seletores
-                let qrCode = null;
-				const qrSelectors = [
-					"[data-ref]",
-					"canvas[aria-label*='Scan me']",
-					"[data-testid='qrcode']",
-					"[data-testid='qr-code']",
-					".qr-wrapper",
-					"div[role='img'][aria-label*='QR']"
-				];
+            // Procurar QR Code com múltiplas tentativas
+            console.log('📱 Procurando QR Code...');
+            const qrFound = await this.findAndCaptureQR();
+            
+            if (qrFound) {
+                console.log('✅ QR Code capturado com sucesso!');
+                console.log('📸 Screenshot salvo em: whatsapp_qr_debug.png');
+                console.log('🌐 Acesse a página de QR Code para escanear');
+                console.log('');
+                console.log('📲 INSTRUÇÕES PARA CONECTAR:');
+                console.log('   1. Abra o WhatsApp no seu celular');
+                console.log('   2. Toque em Menu (⋮) > Dispositivos conectados');
+                console.log('   3. Toque em "Conectar um dispositivo"');
+                console.log('   4. Escaneie o QR Code exibido');
+                console.log('');
                 
-                for (const selector of qrSelectors) {
-                    try {
-                        qrCode = await this.driver.findElement(By.css(selector));
-                        if (qrCode) {
-                            console.log(`📱 QR Code detectado (seletor: ${selector})`);
-                            // Tirar screenshot extra quando o QR é detectado (garantir captura do QR atual)
-                            try {
-                                await this.driver.sleep(Math.max(1000, this.qrDelayMs=2000));
-                                const png = await this.driver.takeScreenshot();
-                                const ssPath = path.join(process.cwd(), 'whatsapp_qr_debug.png');
-                                fs.writeFileSync(ssPath, png, 'base64');
-                                console.log('📸 Screenshot (QR) salvo em', ssPath);
-                            } catch (sErr) {
-                                console.warn('📸 Falha ao salvar screenshot do QR:', sErr && sErr.message ? sErr.message : sErr);
-                            }
-                            break;
-                        }
-                    } catch (e) {
-                        continue;
+                // Não aguardar login de forma bloqueante - deixar a página fazer polling
+                return true;
+            } else {
+                console.warn('⚠️  QR Code não encontrado após todas as tentativas');
+                await this.saveDebugInfo();
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('❌ Erro ao verificar/capturar QR:', error.message);
+            await this.saveDebugInfo();
+            return false;
+        }
+    }
+
+    async isAlreadyLoggedIn() {
+        const selectors = [
+            "[data-testid='chat-list']",
+            "#side",
+            "[data-testid='conversation-panel-wrapper']"
+        ];
+        
+        for (const selector of selectors) {
+            try {
+                const element = await this.driver.findElement(By.css(selector));
+                if (element) {
+                    const isDisplayed = await element.isDisplayed().catch(() => false);
+                    if (isDisplayed) {
+                        return true;
                     }
                 }
-                
-                if (qrCode) {
-                    console.log('📱 QR Code detectado!');
-                    console.log('📲 INSTRUÇÕES:');
-                    console.log('   1. Abra o WhatsApp no seu celular');
-                    console.log('   2. Toque em "Menu" ou "Configurações"');
-                    console.log('   3. Toque em "Dispositivos conectados"');
-                    console.log('   4. Toque em "Conectar um dispositivo"');
-                    console.log('   5. Escaneie o QR Code que aparece na tela do computador');
-                    console.log('⏳ Aguardando login... (máximo 30 segundos)');
-                    
-                    // Aguardar login com timeout configurável (this.waitTimeout em ms)
-					const maxWait = Math.max(20, Math.ceil(this.waitTimeout / 1000)); // mínimo 20s
-                    for (let i = 0; i < maxWait; i++) {
-                        await this.driver.sleep(1000);
-                        if (i % 5 === 0) { // Mostrar progresso a cada 5 segundos
-                            console.log(`   Aguardando login... ${i}/${maxWait}s`);
-                        }
+            } catch (e) {
+                continue;
+            }
+        }
+        
+        return false;
+    }
 
-                        try {
-                            await this.driver.findElement(By.css("[data-testid='chat-list']"));
-                            this.isLoggedIn = true;
-                            console.log('🎉 Login realizado com sucesso!');
-                            return true;
-                        } catch (error) {
+    async findAndCaptureQR() {
+        // Múltiplas tentativas com delays progressivos
+        const attempts = [
+            { delay: 2000, name: 'Primeira tentativa' },
+            { delay: 3000, name: 'Segunda tentativa' },
+            { delay: 4000, name: 'Terceira tentativa' },
+            { delay: 5000, name: 'Quarta tentativa' }
+        ];
+        
+        for (const attempt of attempts) {
+            console.log(`🔄 ${attempt.name} (aguardando ${attempt.delay}ms)...`);
+            await this.driver.sleep(attempt.delay);
+            
+            // Verificar se já logou durante a espera
+            if (await this.isAlreadyLoggedIn()) {
+                this.isLoggedIn = true;
+                console.log('✅ Usuário já conectou durante a espera!');
+                return true;
+            }
+            
+            // Tentar clicar no botão de recarregar QR se existir
+            await this.clickRefreshQR();
+            
+            // Aguardar um pouco após clicar
+            await this.driver.sleep(2000);
+            
+            // Procurar QR pelos seletores
+            const qrSelectors = [
+                "canvas[aria-label*='Scan']",
+                "canvas[aria-label*='scan']",
+                "canvas[aria-label*='QR']",
+                "[data-ref]",
+                "[data-testid='qrcode']",
+                "canvas",
+                ".qr-wrapper canvas",
+                "[role='img'] canvas"
+            ];
+            
+            for (const selector of qrSelectors) {
+                try {
+                    const qrElement = await this.driver.findElement(By.css(selector));
+                    if (qrElement) {
+                        // Verificar se o elemento está visível
+                        const isDisplayed = await qrElement.isDisplayed().catch(() => false);
+                        if (!isDisplayed) {
                             continue;
                         }
+                        
+                        console.log(`✅ QR encontrado com seletor: ${selector}`);
+                        
+                        // Garantir que QR esteja renderizado
+                        await this.driver.sleep(1500);
+                        
+                        // Tirar screenshot
+                        const screenshot = await this.driver.takeScreenshot();
+                        const screenshotPath = path.join(process.cwd(), 'whatsapp_qr_debug.png');
+                        fs.writeFileSync(screenshotPath, screenshot, 'base64');
+                        
+                        // Verificar se arquivo foi criado
+                        if (fs.existsSync(screenshotPath)) {
+                            const stats = fs.statSync(screenshotPath);
+                            console.log(`📸 Screenshot salvo: ${screenshotPath} (${stats.size} bytes)`);
+                            this.qrCodeData = screenshot;
+                            return true;
+                        }
                     }
-                    
-                    console.warn('⏰ Timeout aguardando login');
-                    console.log('💡 Se o QR Code não apareceu, tente:');
-                    console.log('   - Recarregar a página no navegador');
-                    console.log('   - Fechar e reabrir o navegador');
-                    console.log('   - Verificar se não há outras sessões ativas');
-                    return false;
-                } else {
-                    console.log('⚠️  QR Code não encontrado');
+                } catch (e) {
+                    // Continuar tentando outros seletores
+                    continue;
                 }
-            } catch (error) {
-                console.log('⚠️  Erro ao procurar QR Code:', error.message);
             }
-            
-            // Tentar uma abordagem mais simples - verificar se há elementos de contato
+        }
+        
+        console.error('❌ Não foi possível encontrar o QR Code após todas as tentativas');
+        return false;
+    }
+
+    async clickRefreshQR() {
+        const refreshSelectors = [
+            "[data-testid='refresh-large']",
+            "[aria-label*='Refresh']",
+            "button[aria-label*='QR']"
+        ];
+        
+        for (const selector of refreshSelectors) {
             try {
-                console.log('🔍 Verificando elementos da página...');
-                const spansWithTitle = await this.driver.findElements(By.css("span[title]"));
-                if (spansWithTitle.length > 5) { // Se há muitos spans com title, provavelmente está logado
-                    this.isLoggedIn = true;
-                    console.log('✅ WhatsApp Web está logado (detectado por elementos)');
+                const button = await this.driver.findElement(By.css(selector));
+                if (button) {
+                    await button.click();
+                    console.log('🔄 Botão de recarregar QR clicado');
                     return true;
                 }
-            } catch (error) {
-                console.log('⚠️  Erro ao verificar elementos:', error.message);
+            } catch (e) {
+                continue;
+            }
+        }
+        return false;
+    }
+
+    async waitForLogin() {
+        console.log('⏳ Aguardando login...');
+        const maxWait = Math.ceil(this.waitTimeout / 1000);
+        
+        for (let i = 0; i < maxWait; i++) {
+            await this.driver.sleep(1000);
+            
+            if (i % 10 === 0 && i > 0) {
+                console.log(`   Aguardando... ${i}/${maxWait}s`);
             }
             
-            console.warn('❌ Não foi possível determinar o status de login');
-            console.log('💡 POSSÍVEIS SOLUÇÕES:');
-            console.log('   1. Verifique se o navegador está aberto e visível');
-            console.log('   2. Recarregue a página manualmente (F5)');
-            console.log('   3. Feche outras sessões do WhatsApp Web');
-            console.log('   4. Verifique sua conexão com a internet');
-            return false;
-                    
-        } catch (error) {
-            console.error('Erro ao verificar login:', error);
-            return false;
+            if (await this.isAlreadyLoggedIn()) {
+                this.isLoggedIn = true;
+                console.log('🎉 Login realizado com sucesso!');
+                return true;
+            }
+        }
+        
+        console.warn('⏰ Timeout ao aguardar login');
+        return false;
+    }
+
+    async saveDebugInfo() {
+        try {
+            // Salvar screenshot
+            const screenshot = await this.driver.takeScreenshot();
+            fs.writeFileSync('whatsapp_qr_debug_noqrcode.png', screenshot, 'base64');
+            
+            // Salvar HTML da página
+            const html = await this.driver.getPageSource();
+            fs.writeFileSync('whatsapp_page.html', html);
+            
+            console.log('🔍 Informações de debug salvas:');
+            console.log('   - whatsapp_qr_debug_noqrcode.png');
+            console.log('   - whatsapp_page.html');
+        } catch (e) {
+            console.error('Erro ao salvar debug:', e.message);
         }
     }
 
     async getContacts() {
         if (!this.isLoggedIn) {
-            console.error('Bot não está logado');
-            return [];
+            throw new Error('Bot não está logado');
         }
         
         try {
-            // Aguardar carregamento da lista de contatos
-            await this.driver.wait(until.elementLocated(By.css("[data-testid='chat-list']")), 10000);
+            // Aguardar lista de chats
+            await this.driver.wait(
+                until.elementLocated(By.css("[data-testid='chat-list']")),
+                10000
+            );
             
-            // Script JavaScript para obter nomes dos contatos
+            // Scroll para carregar mais contatos
+            await this.driver.executeScript(`
+                const chatList = document.querySelector('[data-testid="chat-list"]');
+                if (chatList) {
+                    chatList.scrollTop = chatList.scrollHeight;
+                }
+            `);
+            
+            await this.driver.sleep(2000);
+            
+            // Extrair nomes
             const script = `
-                const contacts = [];
+                const contacts = new Set();
                 const chatItems = document.querySelectorAll('[data-testid="chat-list"] [role="listitem"]');
                 
                 chatItems.forEach(item => {
-                    const nameElement = item.querySelector('[data-testid="cell-frame-container"] span[title]');
+                    const nameElement = item.querySelector('span[title]');
                     if (nameElement) {
                         const name = nameElement.getAttribute('title');
                         if (name && name.trim()) {
-                            contacts.push(name.trim());
+                            contacts.add(name.trim());
                         }
                     }
                 });
                 
-                return contacts;
+                return Array.from(contacts);
             `;
             
             const contacts = await this.driver.executeScript(script);
-            console.log(`Encontrados ${contacts.length} contatos`);
+            console.log(`📞 ${contacts.length} contatos encontrados`);
             return contacts;
             
         } catch (error) {
-            console.error('Erro ao obter contatos:', error);
-            return [];
+            console.error('Erro ao obter contatos:', error.message);
+            throw error;
         }
     }
 
     async sendMessage(contactName, message) {
         if (!this.isLoggedIn) {
-            console.error('Bot não está logado');
-            return false;
+            throw new Error('Bot não está logado');
         }
         
         try {
-            console.log(`Enviando mensagem para: ${contactName}`);
+            console.log(`📤 Enviando para: ${contactName}`);
             
-            // Script para encontrar e clicar no contato
+            // Procurar e clicar no contato
             const clickScript = `
-                const contactName = "${contactName}";
+                const targetName = "${contactName.replace(/"/g, '\\"')}";
                 const chatItems = document.querySelectorAll('[data-testid="chat-list"] [role="listitem"]');
                 
                 for (let item of chatItems) {
-                    const nameElement = item.querySelector('[data-testid="cell-frame-container"] span[title]');
+                    const nameElement = item.querySelector('span[title]');
                     if (nameElement) {
                         const name = nameElement.getAttribute('title');
-                        if (name && name.trim() === contactName) {
-                            nameElement.click();
+                        if (name && name.trim() === targetName) {
+                            item.click();
                             return true;
                         }
                     }
@@ -385,37 +493,35 @@ class WhatsAppBot {
                 return false;
             `;
             
-            // Tentar clicar no contato
             const clicked = await this.driver.executeScript(clickScript);
             if (!clicked) {
-                console.error(`Contato '${contactName}' não encontrado`);
-                return false;
+                throw new Error(`Contato '${contactName}' não encontrado`);
             }
             
-            // Aguardar o chat abrir
+            // Aguardar chat abrir
             await this.driver.sleep(2000);
             
-            // Aguardar campo de mensagem aparecer
+            // Encontrar campo de mensagem
             const messageBox = await this.driver.wait(
                 until.elementLocated(By.css("[data-testid='conversation-compose-box-input']")),
                 10000
             );
             
-            // Limpar campo e digitar mensagem
-            await messageBox.clear();
+            // Digitar e enviar
+            await messageBox.click();
             await messageBox.sendKeys(message);
-            
-            // Aguardar um pouco antes de enviar
-            await this.driver.sleep(1000);
-            
-            // Enviar mensagem (pressionar Enter)
+            await this.driver.sleep(500);
             await messageBox.sendKeys(Key.ENTER);
             
             console.log(`✅ Mensagem enviada para ${contactName}`);
+            
+            // Rate limiting: aguardar entre mensagens
+            await this.driver.sleep(3000);
+            
             return true;
             
         } catch (error) {
-            console.error('Erro ao enviar mensagem:', error);
+            console.error(`❌ Erro ao enviar para ${contactName}:`, error.message);
             return false;
         }
     }
@@ -428,26 +534,50 @@ class WhatsAppBot {
                 if (await this.sendMessage(contact, message)) {
                     results.sent.push(contact);
                 } else {
-                    results.failed.push({ contact: contact, error: 'Falha ao enviar' });
+                    results.failed.push({ contact, error: 'Falha ao enviar' });
                 }
             } catch (error) {
-                results.failed.push({ contact: contact, error: error.message });
+                results.failed.push({ contact, error: error.message });
             }
         }
         
         return results;
     }
 
+    getQRCodeData() {
+        return this.qrCodeData;
+    }
+
     async stop() {
         if (this.driver) {
             try {
-                await this.driver.quit();
-                console.log('Bot parado');
+                console.log('🛑 Iniciando parada do bot...');
+                
+                // Tentar fechar driver normalmente
+                await this.driver.quit().catch(e => 
+                    console.warn('Aviso ao fechar driver:', e.message)
+                );
+                
+                // Verificar e limpar processos residuais
+                const { execSync } = require('child_process');
+                console.log('🧹 Verificando processos residuais...');
+                
+                try {
+                    // No Windows, tentar matar processos chrome/chromedriver
+                    execSync('taskkill /F /IM chromedriver.exe /T 2>nul', { stdio: 'ignore' });
+                    execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
+                    console.log('✅ Processos residuais limpos');
+                } catch (e) {
+                    // Ignorar erros se processos não existirem
+                }
+                
+                console.log('🛑 Bot parado com sucesso');
             } catch (error) {
-                console.error('Erro ao parar bot:', error);
+                console.error('Erro ao parar bot:', error.message);
             } finally {
                 this.driver = null;
                 this.isLoggedIn = false;
+                this.qrCodeData = null;
             }
         }
     }
